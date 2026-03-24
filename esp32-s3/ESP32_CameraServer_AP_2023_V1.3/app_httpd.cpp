@@ -1242,7 +1242,7 @@ void startCameraServer() {
     .user_ctx = NULL
 #ifdef CONFIG_HTTPD_WS_SUPPORT
     ,
-    .is_websocket = true,
+    .is_websocket = false,
     .handle_ws_control_frames = false,
     .supported_subprotocol = NULL
 #endif
@@ -1255,7 +1255,7 @@ void startCameraServer() {
     .user_ctx = NULL
 #ifdef CONFIG_HTTPD_WS_SUPPORT
     ,
-    .is_websocket = true,
+    .is_websocket = false,
     .handle_ws_control_frames = false,
     .supported_subprotocol = NULL
 #endif
@@ -1268,7 +1268,7 @@ void startCameraServer() {
     .user_ctx = NULL
 #ifdef CONFIG_HTTPD_WS_SUPPORT
     ,
-    .is_websocket = true,
+    .is_websocket = false,
     .handle_ws_control_frames = false,
     .supported_subprotocol = NULL
 #endif
@@ -1281,7 +1281,7 @@ void startCameraServer() {
     .user_ctx = NULL
 #ifdef CONFIG_HTTPD_WS_SUPPORT
     ,
-    .is_websocket = true,
+    .is_websocket = false,
     .handle_ws_control_frames = false,
     .supported_subprotocol = NULL
 #endif
@@ -1294,7 +1294,7 @@ void startCameraServer() {
     .user_ctx = NULL
 #ifdef CONFIG_HTTPD_WS_SUPPORT
     ,
-    .is_websocket = true,
+    .is_websocket = false,
     .handle_ws_control_frames = false,
     .supported_subprotocol = NULL
 #endif
@@ -1307,7 +1307,7 @@ void startCameraServer() {
     .user_ctx = NULL
 #ifdef CONFIG_HTTPD_WS_SUPPORT
     ,
-    .is_websocket = true,
+    .is_websocket = false,
     .handle_ws_control_frames = false,
     .supported_subprotocol = NULL
 #endif
@@ -1320,7 +1320,7 @@ void startCameraServer() {
     .user_ctx = NULL
 #ifdef CONFIG_HTTPD_WS_SUPPORT
     ,
-    .is_websocket = true,
+    .is_websocket = false,
     .handle_ws_control_frames = false,
     .supported_subprotocol = NULL
 #endif
@@ -1333,7 +1333,7 @@ void startCameraServer() {
     .user_ctx = NULL
 #ifdef CONFIG_HTTPD_WS_SUPPORT
     ,
-    .is_websocket = true,
+    .is_websocket = false,
     .handle_ws_control_frames = false,
     .supported_subprotocol = NULL
 #endif
@@ -1346,7 +1346,7 @@ void startCameraServer() {
     .user_ctx = NULL
 #ifdef CONFIG_HTTPD_WS_SUPPORT
     ,
-    .is_websocket = true,
+    .is_websocket = false,
     .handle_ws_control_frames = false,
     .supported_subprotocol = NULL
 #endif
@@ -1359,7 +1359,7 @@ void startCameraServer() {
     .user_ctx = NULL
 #ifdef CONFIG_HTTPD_WS_SUPPORT
     ,
-    .is_websocket = true,
+    .is_websocket = false,
     .handle_ws_control_frames = false,
     .supported_subprotocol = NULL
 #endif
@@ -1372,7 +1372,7 @@ void startCameraServer() {
     .user_ctx = NULL
 #ifdef CONFIG_HTTPD_WS_SUPPORT
     ,
-    .is_websocket = true,
+    .is_websocket = false,
     .handle_ws_control_frames = false,
     .supported_subprotocol = NULL
 #endif
@@ -1404,7 +1404,7 @@ void startCameraServer() {
     .user_ctx = NULL
 #ifdef CONFIG_HTTPD_WS_SUPPORT
     ,
-    .is_websocket = true,
+    .is_websocket = false,
     .handle_ws_control_frames = false,
     .supported_subprotocol = NULL
 #endif
@@ -1417,7 +1417,7 @@ void startCameraServer() {
     .user_ctx = NULL
 #ifdef CONFIG_HTTPD_WS_SUPPORT
     ,
-    .is_websocket = true,
+    .is_websocket = false,
     .handle_ws_control_frames = false,
     .supported_subprotocol = NULL
 #endif
@@ -1430,7 +1430,7 @@ void startCameraServer() {
     .user_ctx = NULL
 #ifdef CONFIG_HTTPD_WS_SUPPORT
     ,
-    .is_websocket = true,
+    .is_websocket = false,
     .handle_ws_control_frames = false,
     .supported_subprotocol = NULL
 #endif
