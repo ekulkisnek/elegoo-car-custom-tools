@@ -32,6 +32,7 @@ Nothing here replaces ELEGOO’s documentation; it **supplements** your own work
 | `docs/STAGE_A_STABLE_CAR_SERVICES.md` | **Stage A milestone:** stable Wi‑Fi + camera stream + TCP/100; acceptance checklist (PASSED) and technical summary. |
 | `openpilot-mods/` | **commaai/openpilot** local patches only — **`patches/stage-b-openpilot-camera.patch`** (5 files: manager + UI + **AugmentedRoadView** webcam overlay). See `README.md`. |
 | `docs/STAGE_B_CAMERA_OPENPILOT.md` | **Stage B:** camera works in openpilot UI (webcam / NOBOARD / MJPEG); links to patch + env vars. |
+| `docs/MAC_CONTROLS_CAR.md` | **Mac → TCP/100 → Serial2 → UNO** path; motor suite uses **N=3 untimed** forward/back (bridge reliability vs N=2 timed). |
 | `requirements.txt` | Optional Python deps (`pyserial`, `esptool`) for a local venv. |
 
 ---

@@ -24,7 +24,6 @@ from elegoo_protocol import (
     MotorDirection,
     MotorSelection,
     RockerDirection,
-    cmd_car_timed,
     cmd_car_untimed,
     cmd_motor_control,
     cmd_motor_speed,
@@ -50,7 +49,6 @@ class TestStep:
 SAFE_SPEED = 80
 ARC_FAST = 100
 ARC_SLOW = 45
-SHORT_MS = 450
 
 
 TEST_STEPS: list[TestStep] = [
@@ -62,21 +60,22 @@ TEST_STEPS: list[TestStep] = [
         expected_key="stop",
         safety_note="Use this before and after every movement block.",
     ),
+    # N=2 timed linear (APP) can fail on some bridges while N=3 untimed works; Stage C uses N=3 for forward/back.
     TestStep(
-        key="timed_forward",
-        title="Timed forward pulse",
-        command_factory=lambda: cmd_car_timed(Direction.FORWARD, SAFE_SPEED, SHORT_MS),
-        settle_seconds=1.2,
+        key="untimed_forward",
+        title="Untimed forward (then stop after prompt)",
+        command_factory=lambda: cmd_car_untimed(Direction.FORWARD, SAFE_SPEED),
+        settle_seconds=1.0,
         expected_key="car_forward",
-        safety_note="Short pulse only. Wheels may chirp before rolling.",
+        safety_note="Same opcode family as turns (N=3). Runner sends stop after your observation.",
     ),
     TestStep(
-        key="timed_backward",
-        title="Timed backward pulse",
-        command_factory=lambda: cmd_car_timed(Direction.BACKWARD, SAFE_SPEED, SHORT_MS),
-        settle_seconds=1.2,
+        key="untimed_backward",
+        title="Untimed backward (then stop after prompt)",
+        command_factory=lambda: cmd_car_untimed(Direction.BACKWARD, SAFE_SPEED),
+        settle_seconds=1.0,
         expected_key="car_backward",
-        safety_note="Keep clear behind the car.",
+        safety_note="Keep clear behind the car. Runner sends stop after your observation.",
     ),
     TestStep(
         key="untimed_left",
