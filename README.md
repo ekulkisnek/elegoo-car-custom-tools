@@ -1,24 +1,115 @@
 # ELEGOO Smart Robot Car V4 — custom tools & notes
 
-This repository holds **only personal tooling and documentation** for working with the **ELEGOO Smart Robot Car Kit V4.0** (ESP32-S3 camera module + Arduino UNO stack). It does **not** include the ELEGOO vendor firmware tree, PDFs, or large third-party projects—those stay in the official kit ZIP or upstream repos.
+This repository holds **personal tooling, firmware patches, and documentation** for the **ELEGOO Smart Robot Car Kit V4.0** (ESP32-S3 camera + Arduino UNO) and for **bridging [commaai/openpilot](https://github.com/commaai/openpilot)** to the car over the stock **TCP/100** path. It does **not** vendor the full ELEGOO ZIP, full openpilot tree, or large binaries—those stay in the kit release, upstream clones, or private storage.
 
-**Resume / project state:** see **`ELEGOO-PROJECT-STATE.md`** at this repo root (stages A–E, gaps, copy-paste commands — we are **stuck in Stage E** control tuning until floor gains are dialed in).
+**Resume / project state:** see **`ELEGOO-PROJECT-STATE.md`** at this repo root (stages, gaps, copy-paste commands). **Current bottleneck:** **Stage E** — tuning control so the car behaves **safely and predictably** under openpilot (torque → motor commands, safety stops, asymmetry). **Stage F** — richer **synthetic feedback** into openpilot (`carState`) when real telemetry from the stock stack is limited.
 
 If you clone this repo, pair it with:
 
-- **ELEGOO Smart Robot Car Kit V4.0** (e.g. `2024.01.30` release) for the stock `SmartRobotCarV4.0.ino`, `ESP32_CameraServer_AP_2023_V1.3`, manuals, and APP assets.
-- **Arduino ESP32 board support** and **arduino-cli** (or Arduino IDE) for builds.
+- **ELEGOO Smart Robot Car Kit V4.0** (e.g. `2024.01.30` release) for stock sketches, manuals, and APP assets.
+- **Arduino ESP32** board support and **arduino-cli** (or IDE) for ESP32-S3 builds.
+- A separate **openpilot** checkout (e.g. sibling `openpilot/`) if you use the bridge or **`openpilot-mods/`** patches—see **`ELEGOO-PROJECT-STATE.md`** for layout.
+
+---
+
+## What the stack does today (functionalities)
+
+| Piece | Role |
+|------|------|
+| **ESP32-S3** | Wi‑Fi (home STA + `ELEGOO-…` soft AP), **HTTP** camera UI + MJPEG, **TCP :100** JSON bridge to the UNO |
+| **Arduino UNO** | Motor control from the stock **JSON** protocol (`N=4` torque-style commands, `N=100` stop, etc.) |
+| **Mac / PC** | Flash tooling, **`elegoo_motor_test_suite.py`** (gated motor tests), **openpilot** + Python **bridge** (sendcan → TCP) when configured |
+| **openpilot (dev)** | Webcam road camera (Stage B patches under **`openpilot-mods/`**), **card** / torque messaging — bridge consumes **`TORQUE_L` / `TORQUE_R`** and maps to ELEGOO-side speeds |
+
+Remaining work is not “more GPIO” but **control quality** (Stage E) and **believable state feedback** (Stage F) so the closed loop feels stable.
+
+---
+
+## Current challenges: Stage E (control tuning) — in progress
+
+**Goal:** tune control so the car behaves **safely and predictably** under openpilot.
+
+### What needs tuning
+
+**Torque-to-speed mapping** — Openpilot outputs **`TORQUE_L` / `TORQUE_R`** in comma/body units; the ELEGOO expects **PWM-like** speed values. You need: a **scale** factor, **clipping**, **sign** handling, and a **neutral deadband**.
+
+**Left/right asymmetry** — Small robots often pull to one side. Expect **left/right bias** correction and optional **per-side scaling**.
+
+**Low-speed behavior** — Avoid **motor chatter** from tiny commands, **sudden jerks** near zero torque, and **oscillation** around standstill.
+
+**Safety behavior** — Always aim for: **stop on bridge exit**, **stop on TCP disconnect**, **stop on stale sendcan**, **stop on invalid state**, and **output rate limiting**.
+
+### Recommended E steps
+
+1. Start with **very conservative** command limits.
+2. **Log:** received torque, translated left/right speeds, time, observed motion.
+3. **Tune order:** **deadband** first → **overall scale** second → **left/right correction** third → **rate limiting** last.
+
+### Exit criteria (Stage E)
+
+- Car moves **smoothly** under low command values.
+- **Straight** commands mostly go **straight**; **turn** commands are **consistent**.
+- **Stop** behavior is **immediate** and **reliable**.
+
+Implementation hooks (when present in your workspace) include **`elegoo_control_map.py`**, **`elegoo_openpilot_bridge.py`**, and flags such as **`--torque-scale`**, **`--deadband`**, **`--stale-sendcan-stop`** — see **`ELEGOO-PROJECT-STATE.md`**.
+
+---
+
+## Stage F (feedback / `carState`) — planned
+
+**Goal:** improve the **quality of state** fed back to openpilot so the stack behaves more naturally.
+
+**Reality:** the stock ELEGOO path does not expose **rich real telemetry** in a clean way over TCP, so early feedback will likely be **synthetic**.
+
+**MVP feedback model**
+
+- **Wheel speeds:** derive estimated **`SPEED_L` / `SPEED_R`** from recent translated motor commands (stable and believable, not perfect at first).
+- **Standstill:** report standstill when commanded speeds are near zero long enough.
+- **Faults:** set fault bits on TCP disconnect, heartbeat failure, unreachable car, bridge exceptions.
+- **Battery / charging:** stable **placeholders** first (`BATT_PERCENTAGE`, `CHARGER_CONNECTED`); improve if real data appears.
+
+**Better F later:** simple dynamics (not instant speed assignment), accel ramp, saturation/slip handling, optional vision/timing hints, real telemetry only if worth the complexity.
+
+### Exit criteria (Stage F)
+
+- openpilot receives **stable `carState`**, **no excessive fault flapping**, **consistent** control loop, synthetic state **good enough** to keep the robot controllable.
+
+---
+
+## Recommended execution order
+
+1. Treat **Stage C** (gated motor tests, real-world safety) as the **gate** before trusting automation on the floor.
+2. **D.1 / D.2** (bridge plumbing, sendcan path) can proceed **in parallel** with C where safe.
+3. After C is proven, run **D.3 live** (bridge + car + openpilot).
+4. **Iterate E and F together:** **E** for **command quality**, **F** for **state quality**.
+
+---
+
+## “Minimal easy setup” (target end state)
+
+The simplest version of the final system should be:
+
+1. **Power on** the car.
+2. Ensure **camera / TCP :100** reachable on the LAN.
+3. Start **one bridge script**.
+4. Start **openpilot** in **webcam** mode.
+5. **Openpilot drives** through the bridge.
+
+Exact commands and env vars live in **`ELEGOO-PROJECT-STATE.md`** and stage-specific docs under **`docs/`**.
 
 ---
 
 ## What problem this repo solves
 
-1. **Repeatable diagnostics** — Shell scripts to check LAN connectivity, optional SSH, serial boot logs, and `arduino-cli` compile sanity without hunting through a multi-gigabyte kit folder.
-2. **Isolated WiFi testing** — A tiny **soft-AP-only** sketch so you can tell whether RF/WiFi stack issues are separate from camera/web firmware.
-3. **Resilient ESP32 flash backup** — A Python script that reads the whole SPI flash in **1 MiB chunks with retries**, which is easier on flaky USB than one long `read_flash`.
-4. **Firmware backup provenance** — Documented notes from a **read-only** capture session (UNO flash, ESP32 capture failures, SHA-256 manifest, and warnings about EEPROM/fuse reads over the bootloader).
+1. **Repeatable diagnostics** — Shell scripts for LAN, serial, `arduino-cli` compile checks.
+2. **Isolated WiFi testing** — Soft-AP-only smoke sketch.
+3. **Resilient ESP32 flash backup** — Chunked SPI read with retries.
+4. **Firmware backup provenance** — Session notes, hashes, restore cautions.
+5. **Camera firmware fixes** — Patched **ESP32-S3** sketch sources (`esp32-s3/...`) for STA + HTTP/WebSocket behavior.
+6. **openpilot-on-Mac dev** — **`openpilot-mods/`** patches (webcam, manager, UI) — not a full fork.
+7. **Bridge + control roadmap** — Documentation for Stages D–F and **`ELEGOO-PROJECT-STATE.md`** as the living handoff.
 
-Nothing here replaces ELEGOO’s documentation; it **supplements** your own workflow.
+Nothing here replaces ELEGOO’s or comma’s upstream docs; it **supplements** your workflow.
 
 ---
 
@@ -37,6 +128,7 @@ Nothing here replaces ELEGOO’s documentation; it **supplements** your own work
 | `docs/STAGE_B_CAMERA_OPENPILOT.md` | **Stage B:** camera works in openpilot UI (webcam / NOBOARD / MJPEG); links to patch + env vars. |
 | `docs/MAC_CONTROLS_CAR.md` | **Mac → TCP/100 → Serial2 → UNO** path; motor suite uses **N=3 untimed** forward/back (bridge reliability vs N=2 timed). |
 | `docs/STAGE_D_OPENPILOT_NON_BLOCKERS.md` | **Stage D:** openpilot moving wheels — symptom→cause table for **non-blocking** log noise (dirty tree, dbus, models, encoderd, PyAV/cv2, EKF, etc.). |
+| `README.md` (top sections) | **Living roadmap:** stack capabilities, **Stage E** (tuning + safety), **Stage F** (synthetic `carState`), execution order, **minimal easy setup** target. |
 | `requirements.txt` | Optional Python deps (`pyserial`, `esptool`) for a local venv. |
 
 ---
@@ -180,10 +272,11 @@ These files record a **read-only** backup session:
 
 ## What is intentionally excluded
 
-- ELEGOO **ZIP** / full **manual + code** tree  
-- **openpilot** or other large upstream projects  
-- **Prebuilt** `arduino-cli` binaries, **venv** directories, **build output**  
-- **Firmware binaries** (use `.gitignore`; store separately if needed)
+- ELEGOO **ZIP** / full **manual + code** tree (use the kit release beside this repo).
+- The **full openpilot** checkout — only **`openpilot-mods/patches/*.patch`** and notes are stored here; clone **commaai/openpilot** separately.
+- Other large upstream trees (same idea).
+- **Prebuilt** `arduino-cli` binaries, **venv** directories, **build output**.
+- **Firmware binaries** (use `.gitignore`; store separately if needed).
 
 ---
 
