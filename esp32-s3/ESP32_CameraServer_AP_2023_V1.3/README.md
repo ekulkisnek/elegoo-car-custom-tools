@@ -29,4 +29,4 @@ If **`elegoo-car.local`** does not resolve (some routers block mDNS), use the **
 
 The `/drive` page shows MJPEG from **port 81** and sends commands via **`POST /elegoo_cmd`** to `Serial2`. **Buttons can move the car** — secure the chassis before testing.
 
-See `docs/FIXES_ESP32_STA_AND_BRIDGE_2026-03-24.md` for what changed and why.
+See `docs/FIXES_ESP32_STA_AND_BRIDGE_2026-03-24.md` for what changed and why. For **why the browser UI loads at all** (HTTP vs WebSocket flags, `/stream` on port 80) and the **arduino-cli flash + verify** workflow, see **`docs/WORKING_WEBUI.md`** in the repo root.

@@ -28,6 +28,7 @@ Nothing here replaces ELEGOO’s documentation; it **supplements** your own work
 | `esp32-s3/shell/*.sh` | Bash helpers: connectivity, toolchain/SSH checks, optional LDT automation, WiFi sanity. |
 | `esp32-s3/WiFi_AP_SmokeTest/` | Minimal Arduino sketch: broadcasts `ELEGOO-SMOKE` soft AP (no camera). |
 | `docs/firmware-backup-2026-03-23/` | Notes, checksums, and failure logs from the March 2026 backup session (text only; binary dumps are not in git). |
+| `docs/WORKING_WEBUI.md` | **Camera Web UI:** why HTTP works on Arduino ESP32 3.3+ (`CONFIG_HTTPD_WS_SUPPORT` / `is_websocket`), `/stream` on port 80, and the **build → flash → browser** workflow we use. |
 | `requirements.txt` | Optional Python deps (`pyserial`, `esptool`) for a local venv. |
 
 ---
