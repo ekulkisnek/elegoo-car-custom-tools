@@ -216,6 +216,22 @@ void setup()
 }
 void loop()
 {
+  static unsigned long diag_ms = 0;
+  if (millis() - diag_ms > 20000) {
+    diag_ms = millis();
+    Serial.println("--- net ---");
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.print("STA OK  http://");
+      Serial.print(WiFi.localIP());
+      Serial.println("/  or http://elegoo-car.local/");
+    } else {
+      Serial.println("STA not on home Wi-Fi — join SoftAP below, then http://192.168.4.1/");
+    }
+    Serial.print("SoftAP SSID: ELEGOO-");
+    Serial.println(CameraWebServerAP.wifi_name);
+    Serial.print("SoftAP IP:   http://");
+    Serial.println(WiFi.softAPIP());
+  }
   SocketServer_Test();
   FactoryTest();
 }
