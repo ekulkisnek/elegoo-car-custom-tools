@@ -33,6 +33,7 @@ Nothing here replaces ELEGOO’s documentation; it **supplements** your own work
 | `openpilot-mods/` | **commaai/openpilot** local patches only — **`patches/stage-b-openpilot-camera.patch`** (5 files: manager + UI + **AugmentedRoadView** webcam overlay). See `README.md`. |
 | `docs/STAGE_B_CAMERA_OPENPILOT.md` | **Stage B:** camera works in openpilot UI (webcam / NOBOARD / MJPEG); links to patch + env vars. |
 | `docs/MAC_CONTROLS_CAR.md` | **Mac → TCP/100 → Serial2 → UNO** path; motor suite uses **N=3 untimed** forward/back (bridge reliability vs N=2 timed). |
+| `docs/STAGE_D_OPENPILOT_NON_BLOCKERS.md` | **Stage D:** openpilot moving wheels — symptom→cause table for **non-blocking** log noise (dirty tree, dbus, models, encoderd, PyAV/cv2, EKF, etc.). |
 | `requirements.txt` | Optional Python deps (`pyserial`, `esptool`) for a local venv. |
 
 ---
