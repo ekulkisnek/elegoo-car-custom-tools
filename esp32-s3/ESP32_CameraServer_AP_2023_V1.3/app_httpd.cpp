@@ -19,6 +19,8 @@
 #include "esp32-hal-ledc.h"
 #include "sdkconfig.h"
 #include "camera_index.h"
+#include "ElegooSerial2Bridge.h"
+#include "elegoo_drive_html.h"
 
 #if defined(ARDUINO_ARCH_ESP32) && defined(CONFIG_ARDUHAL_ESP_LOG)
 #include "esp32-hal-log.h"
@@ -1196,11 +1198,52 @@ static esp_err_t Test2_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+#define ELEGOO_CMD_MAX_BODY 280
 
+static esp_err_t drive_handler(httpd_req_t *req) {
+  httpd_resp_set_type(req, "text/html; charset=utf-8");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  return httpd_resp_send(req, ELEGOO_DRIVE_HTML, HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t elegoo_options_handler(httpd_req_t *req) {
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Methods", "POST, OPTIONS");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Headers", "Content-Type");
+  httpd_resp_set_status(req, "204 No Content");
+  return httpd_resp_send(req, NULL, 0);
+}
+
+static esp_err_t elegoo_cmd_handler(httpd_req_t *req) {
+  if (req->content_len <= 0 || req->content_len > ELEGOO_CMD_MAX_BODY) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    httpd_resp_set_type(req, "text/plain");
+    return httpd_resp_send(req, "bad body", HTTPD_RESP_USE_STRLEN);
+  }
+  char buf[ELEGOO_CMD_MAX_BODY + 1];
+  size_t off = 0;
+  int remaining = req->content_len;
+  while (remaining > 0) {
+    int r = httpd_req_recv(req, buf + off, remaining);
+    if (r <= 0) {
+      if (r == HTTPD_SOCK_ERR_TIMEOUT) {
+        httpd_resp_send_408(req);
+      }
+      return ESP_FAIL;
+    }
+    off += (size_t)r;
+    remaining -= r;
+  }
+  buf[off] = 0;
+  elegoo_forward_to_car(buf);
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  return httpd_resp_send(req, "{\"ok\":true}", HTTPD_RESP_USE_STRLEN);
+}
 
 void startCameraServer() {
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-  config.max_uri_handlers = 16;
+  config.max_uri_handlers = 20;
 
   httpd_uri_t index_uri = {
     .uri = "/",
@@ -1364,6 +1407,45 @@ void startCameraServer() {
         .handler = Test2_handler,
         .user_ctx = NULL};
 
+  httpd_uri_t drive_uri = {
+    .uri = "/drive",
+    .method = HTTP_GET,
+    .handler = drive_handler,
+    .user_ctx = NULL
+#ifdef CONFIG_HTTPD_WS_SUPPORT
+    ,
+    .is_websocket = true,
+    .handle_ws_control_frames = false,
+    .supported_subprotocol = NULL
+#endif
+  };
+
+  httpd_uri_t elegoo_cmd_uri = {
+    .uri = "/elegoo_cmd",
+    .method = HTTP_POST,
+    .handler = elegoo_cmd_handler,
+    .user_ctx = NULL
+#ifdef CONFIG_HTTPD_WS_SUPPORT
+    ,
+    .is_websocket = true,
+    .handle_ws_control_frames = false,
+    .supported_subprotocol = NULL
+#endif
+  };
+
+  httpd_uri_t elegoo_cmd_options_uri = {
+    .uri = "/elegoo_cmd",
+    .method = HTTP_OPTIONS,
+    .handler = elegoo_options_handler,
+    .user_ctx = NULL
+#ifdef CONFIG_HTTPD_WS_SUPPORT
+    ,
+    .is_websocket = true,
+    .handle_ws_control_frames = false,
+    .supported_subprotocol = NULL
+#endif
+  };
+
   ra_filter_init(&ra_filter, 20);
 
 #if CONFIG_ESP_FACE_RECOGNITION_ENABLED
@@ -1375,6 +1457,9 @@ void startCameraServer() {
   log_i("Starting web server on port: '%d'", config.server_port);
   if (httpd_start(&camera_httpd, &config) == ESP_OK) {
     httpd_register_uri_handler(camera_httpd, &index_uri);
+    httpd_register_uri_handler(camera_httpd, &drive_uri);
+    httpd_register_uri_handler(camera_httpd, &elegoo_cmd_uri);
+    httpd_register_uri_handler(camera_httpd, &elegoo_cmd_options_uri);
     httpd_register_uri_handler(camera_httpd, &cmd_uri);
     httpd_register_uri_handler(camera_httpd, &status_uri);
     httpd_register_uri_handler(camera_httpd, &capture_uri);

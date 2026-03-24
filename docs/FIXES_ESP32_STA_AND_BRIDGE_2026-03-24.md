@@ -37,9 +37,17 @@ This note describes the **firmware changes** that made the ELEGOO ESP32-S3 camer
 
 **Why it matters:** Without this, **heartbeat / idle detection** matches **AP-only** assumptions and breaks **LAN** control even when data is flowing on STA.
 
-### Supporting / unchanged vendor files
+### Supporting vendor files
 
-The following remain as in the ELEGOO **V1.3** tree for this board and are included for a **complete Arduino sketch folder**: `CameraWebServer_AP.h`, `app_httpd.cpp`, `camera_pins.h`, `camera_index.h`, `Notes.txt`. No separate functional “fix” was required there for the STA/bridge issues above.
+Included for a **complete Arduino sketch folder**: `CameraWebServer_AP.h`, `camera_pins.h`, `camera_index.h`, `Notes.txt`.
+
+### `app_httpd.cpp`, `elegoo_drive_html.h`, `ElegooSerial2Bridge.h`
+
+**Purpose:** A normal web page cannot open **TCP port 100** from JavaScript. The camera HTTP server (port 80 by default) exposes **`POST /elegoo_cmd`**, which reads a small JSON body and forwards it to **`Serial2`** via **`elegoo_forward_to_car()`** defined in the `.ino` (same path as the stock bridge).
+
+**Endpoints:** `GET /drive` serves a minimal page with MJPEG **`http://<host>:<camera_port+1>/stream`** and **Forward / Back / Left / Right / Stop**; **`POST /elegoo_cmd`** accepts the same JSON lines as the Python tools ([`elegoo_protocol.py`](../scripts/elegoo_protocol.py)); **`OPTIONS /elegoo_cmd`** for CORS preflight.
+
+**Safety:** Using the buttons **moves the car** — secure the chassis before testing.
 
 ---
 

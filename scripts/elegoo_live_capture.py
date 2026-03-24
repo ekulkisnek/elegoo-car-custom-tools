@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import codecs
+import glob
 import http.client
 import os
 import socket
@@ -90,13 +91,21 @@ def append_decoded_lines(
 
 
 class SerialCapture(threading.Thread):
-    def __init__(self, name: str, port: str, baud: int, out_dir: Path, stop_event: threading.Event) -> None:
+    def __init__(self, name: str, port_spec: str, baud: int, out_dir: Path, stop_event: threading.Event) -> None:
         super().__init__(name=name, daemon=True)
-        self.port = port
+        self.port_spec = port_spec
         self.baud = baud
         self.stop_event = stop_event
         self.text_log = LogWriter(out_dir / f"{name}.log")
         self.raw_log = BinaryWriter(out_dir / f"{name}.raw")
+
+    def resolve_port(self) -> str:
+        if any(ch in self.port_spec for ch in "*?["):
+            matches = sorted(glob.glob(self.port_spec))
+            if matches:
+                return matches[0]
+            raise FileNotFoundError(f"no serial ports match pattern {self.port_spec}")
+        return self.port_spec
 
     def run(self) -> None:
         if serial is None:
@@ -105,8 +114,9 @@ class SerialCapture(threading.Thread):
 
         while not self.stop_event.is_set():
             try:
-                self.text_log.line(f"opening port={self.port} baud={self.baud}")
-                with serial.Serial(self.port, self.baud, timeout=0.25) as ser:
+                port = self.resolve_port()
+                self.text_log.line(f"opening port={port} baud={self.baud} spec={self.port_spec}")
+                with serial.Serial(port, self.baud, timeout=0.25) as ser:
                     try:
                         ser.reset_input_buffer()
                     except Exception:
@@ -289,8 +299,8 @@ class StreamCapture(threading.Thread):
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default=os.environ.get("ELEGOO_HOST"), help="ESP32 host or IP for HTTP/TCP capture")
-    parser.add_argument("--esp-port", default="/dev/cu.usbmodem21201", help="ESP32 USB serial device")
-    parser.add_argument("--uno-port", default="/dev/cu.usbserial-3120", help="UNO USB serial device")
+    parser.add_argument("--esp-port", default="/dev/cu.usbmodem*", help="ESP32 USB serial device or glob")
+    parser.add_argument("--uno-port", default="/dev/cu.usbserial*", help="UNO USB serial device or glob")
     parser.add_argument("--esp-baud", type=int, default=115200, help="ESP32 serial baud")
     parser.add_argument("--uno-baud", type=int, default=115200, help="UNO serial baud")
     parser.add_argument("--tcp-port", type=int, default=100, help="ESP32 TCP bridge port")

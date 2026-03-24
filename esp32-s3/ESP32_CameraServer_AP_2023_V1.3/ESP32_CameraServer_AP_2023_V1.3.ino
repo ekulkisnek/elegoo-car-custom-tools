@@ -8,6 +8,7 @@
  */
 //#include <EEPROM.h>
 #include "CameraWebServer_AP.h"
+#include "ElegooSerial2Bridge.h"
 #include <WiFi.h>
 #include "esp_camera.h"
 WiFiServer server(100);
@@ -17,6 +18,12 @@ WiFiServer server(100);
 CameraWebServer_AP CameraWebServerAP;
 
 bool WA_en = false;
+
+void elegoo_forward_to_car(const char *json) {
+  if (json) {
+    Serial2.print(json);
+  }
+}
 
 void SocketServer_Test(void)
 {

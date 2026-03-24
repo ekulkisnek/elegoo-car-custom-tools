@@ -122,6 +122,8 @@ Continuous capture for the streams that matter most during bring-up:
 
 Default output goes to **`output/live-capture/<UTC timestamp>/`** with one log per stream plus raw byte captures for serial/TCP. The MJPEG stream is monitored continuously by default and can optionally be saved with **`--save-mjpeg`**.
 
+By default the serial capture follows **`/dev/cu.usbmodem*`** for the ESP32-S3 and **`/dev/cu.usbserial*`** for the UNO, which helps when macOS renumbers the device after a reset.
+
 Example:
 
 ```bash
