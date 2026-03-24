@@ -1,0 +1,11 @@
+Verification performed after capture (read-only compare):
+
+- atmega328p_eeprom_1KiB.bin is byte-identical to the first 1024 bytes of atmega328p_flash_32KiB.bin.
+  → Serial-bootloader EEPROM read did not return real EEPROM contents. Do not use these EEPROM files for restore.
+
+- atmega328p_{l,h,e}fuse.hex and lock read as 0x00 (same hash across multiple files).
+  → Not consistent with a typical programmed ATmega328P. Treat fuse/lock reads over this connection as invalid.
+
+Authoritative UNO image from this session: atmega328p_flash_32KiB.bin / .hex (full 32 KiB flash).
+
+For provably exact EEPROM and fuses, use an ISP programmer (or equivalent) against the chip.

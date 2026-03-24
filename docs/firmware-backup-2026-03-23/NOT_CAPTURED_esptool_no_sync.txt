@@ -1,0 +1,12 @@
+No SPI flash image was read from the on-car ESP32-S3 in this backup session.
+
+Reason: esptool could not synchronize with the ROM serial bootloader on the USB-C CDC port (typical when the application holds the port or the chip is not in download mode).
+
+Retry on this machine (read-only), after putting ESP32-S3 in download mode (hold BOOT, tap RESET, release BOOT) and closing Serial Monitor / other apps using the port:
+
+  python3 -m esptool --chip esp32s3 -p /dev/cu.usbmodemD0CF132BCB181 flash-id
+  python3 -m esptool --chip esp32s3 -p /dev/cu.usbmodemD0CF132BCB181 read_flash 0 ALL esp32s3_flash_full_backup.bin
+
+(Adjust the /dev/cu.usbmodemXXXXXXXX path if it changes.)
+
+Kit reference source (not a dump from this car): ELEGOO kit folder "04 Code of Carmer (ESP32)" under the V4.0 package.

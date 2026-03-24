@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.venv-*/
+
+# Outputs & firmware dumps (keep repo source-only)
+output/
+*.bin
+*.hex
+
+# OS / editor
+.DS_Store
