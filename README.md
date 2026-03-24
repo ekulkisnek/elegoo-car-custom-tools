@@ -99,6 +99,150 @@ Exact commands and env vars live in **`ELEGOO-PROJECT-STATE.md`** and stage-spec
 
 ---
 
+## Fresh agent: pick up where we left off
+
+This section is the **onboarding ladder** for someone (or an agent) with **no prior context**. Read **`ELEGOO-PROJECT-STATE.md`** next; it is the **single resume file** for stages, gaps, and copy-paste commands. Some of those commands assume a **parent workspace** (see below).
+
+### 1. Two directory levels (do not confuse them)
+
+| Location | What it is |
+|----------|------------|
+| **`elegoo-car-custom-tools/`** (this **git** repo) | What you clone from GitHub: ESP32 sketch sources under `esp32-s3/`, Python `scripts/`, `docs/`, `openpilot-mods/`, tests. **This README is the root of this repo.** |
+| **Parent folder** (e.g. `elegoo-comma-1/` on the author’s machine) | Optional **workspace** that may sit **next to** this repo and hold **`openpilot/`**, **`scripts/stage-*-verify/`**, **`artifacts/`** — paths referenced inside **`ELEGOO-PROJECT-STATE.md`**. If you only cloned **`elegoo-car-custom-tools`**, those sibling paths may **not** exist; use the state file as a spec and recreate or symlink as needed. |
+
+**Rule:** paths in **`ELEGOO-PROJECT-STATE.md`** are often written from the **parent** workspace root. Paths in **this README** below `esp32-s3/` and `scripts/` are relative to **`elegoo-car-custom-tools/`**.
+
+### 2. First-time setup (machine)
+
+1. **Install [arduino-cli](https://arduino.github.io/arduino-cli/)** and the **esp32** platform: `arduino-cli core install esp32:esp32`.
+2. **Python 3.10+** for scripts; create a venv in this repo (see [Setup](#setup-macos--linux)) and `pip install -r requirements.txt`.
+3. **Clone** [commaai/openpilot](https://github.com/commaai/openpilot) **separately** if you will run the UI/bridge; apply patches from **`openpilot-mods/`** (see §7).
+4. **chmod** shell scripts once: `chmod +x esp32-s3/shell/*.sh` (and any `scripts/*.sh` you add).
+
+### 3. How the hardware maps to software
+
+```
+[ Mac / PC ] ──Wi‑Fi LAN──► [ ESP32-S3 ] ──Serial2 @ 9600──► [ Arduino UNO ] ──► motors
+                 │              │
+                 │              ├── HTTP :80 / :81  → camera UI, MJPEG /stream
+                 │              └── TCP :100        → JSON app protocol → UNO
+```
+
+- **Firmware you build from this repo** runs on the **ESP32-S3** (camera + Wi‑Fi + bridge). The **UNO** runs ELEGOO stock sketch **`SmartRobotCarV4.0.ino`** (from the kit ZIP — not committed here).
+- **Motor commands** are JSON lines over **TCP :100**, forwarded to **`Serial2`**. Details: **`docs/MAC_CONTROLS_CAR.md`**, **`scripts/elegoo_protocol.py`**, **`docs/protocol-reference-2026-03-24/PROTOCOL_REFERENCE.md`**.
+
+### 4. ESP32 firmware: what lives where
+
+| Path | Role |
+|------|------|
+| **`esp32-s3/ESP32_CameraServer_AP_2023_V1.3/`** | **Canonical** patched camera + bridge sketch (same idea as kit **ESP32-S3-WROOM-1-Camera** tree). |
+| **`ESP32_CameraServer_AP_2023_V1.3.ino`** | Entry: `setup`/`loop`, **TCP server :100**, `Serial2` bridge, calls into camera init. |
+| **`CameraWebServer_AP.cpp`** | Wi‑Fi **AP+STA**, `WiFi.begin`, `secrets.h`, mDNS, `startCameraServer()`. |
+| **`app_httpd.cpp`** | HTTP server: `/`, `/stream`, `/drive`, **`POST /elegoo_cmd`** → `Serial2`. **Critical:** `is_websocket = false` under Arduino 3.3+ `CONFIG_HTTPD_WS_SUPPORT` (see **`docs/WORKING_WEBUI.md`**). |
+| **`elegoo_drive_html.h`** | Embedded **/drive** web UI. |
+| **`secrets.h`** | **Not in git.** Copy from **`secrets.h.example`** → set **`HOME_WIFI_SSID`** / **`HOME_WIFI_PASS`** (2.4 GHz only). |
+| **`platformio.ini`** | Optional **PlatformIO** build; Arduino CLI remains the reference for “match ELEGOO Notes”. |
+
+### 5. Flashing the ESP32 (Arduino CLI, detailed)
+
+**A. One-time credentials**
+
+```bash
+cd esp32-s3/ESP32_CameraServer_AP_2023_V1.3
+cp secrets.h.example secrets.h
+# Edit secrets.h — 2.4 GHz network only
+```
+
+**B. Compile**
+
+```bash
+SK="$(pwd)"   # or absolute path to ESP32_CameraServer_AP_2023_V1.3
+FQBN="esp32:esp32:esp32s3:PartitionScheme=default,PSRAM=opi,CPUFreq=240,FlashMode=qio,FlashSize=8M,UploadSpeed=921600"
+arduino-cli compile --fqbn "$FQBN" "$SK"
+```
+
+**C. Upload** (ESP32-S3 USB; put board in boot mode if upload fails: hold **BOOT**, tap **RESET**, release **BOOT**)
+
+```bash
+arduino-cli upload -p /dev/cu.usbmodemXXXX --fqbn "$FQBN" "$SK"
+```
+
+Use the correct **`/dev/cu.usbmodem*`** (macOS) or `COMx` (Windows). **115200 baud** for **USB serial** logs.
+
+**D. Verify**
+
+- Serial monitor: **`--- net ---`** lines with STA IP and **`ELEGOO-…`** soft AP SSID.
+- Browser: **`http://<STA-IP>/`** or **`http://elegoo-car.local/`** (if mDNS works).
+- See **`docs/WORKING_WEBUI.md`** for HTTP/WebSocket and **`/stream`** on port 80.
+
+**E. Optional: PlatformIO** — open the sketch folder in VS Code with PlatformIO; `pio run -t upload`. See **`platformio.ini`** (illuminator may be disabled for PIO vs Arduino).
+
+### 6. Usage: motor tests (no openpilot)
+
+From **`elegoo-car-custom-tools`**:
+
+```bash
+source .venv/bin/activate   # if using venv
+python3 scripts/elegoo_motor_test_suite.py --host <ESP32_LAN_IP>
+```
+
+Interactive guided steps; uses **`elegoo_protocol`** and **N=3 untimed** forward/back on the bridge (see **`docs/MAC_CONTROLS_CAR.md`**). **Clear the area;** the car can move.
+
+**Unit tests:** `pytest tests/test_elegoo_protocol.py` (no hardware).
+
+### 7. openpilot: patches and integration
+
+1. Check out **openpilot** at or near the SHA in **`openpilot-mods/BASE_COMMIT.txt`** (or resolve conflicts if newer).
+2. From **openpilot** repo root:  
+   `git apply /path/to/elegoo-car-custom-tools/openpilot-mods/patches/stage-b-openpilot-camera.patch`
+3. Read **`openpilot-mods/README.md`** for env vars (`USE_WEBCAM`, `NOBOARD`, `OPENPILOT_START_ONROAD`, `OPENPILOT_SKIP_UNBLOCK_STDOUT`, `OPENPILOT_WEBCAM_ALWAYS`).
+4. Full **bridge / manager** command lines may live under the **parent workspace** — see **`ELEGOO-PROJECT-STATE.md`** (`run_openpilot_manager_macos.sh`, `run_stage_d_bridge.sh`, etc.). If those scripts are missing locally, use the state file as a **recipe** to recreate them or run Python modules with the same env vars.
+
+**Noise vs blockers:** **`docs/STAGE_D_OPENPILOT_NON_BLOCKERS.md`** (dbus, models, encoderd, dirty tree, …).
+
+### 8. Development workflow (edit → verify)
+
+| Goal | Action |
+|------|--------|
+| **Change Wi‑Fi / HTTP / bridge** | Edit **`CameraWebServer_AP.cpp`**, **`app_httpd.cpp`**, or `.ino` → **compile** → **flash** → **curl** / browser / **`run_layer3_connectivity.sh`**. |
+| **Change JSON protocol** | Edit **`scripts/elegoo_protocol.py`** → run **`pytest`** → run **motor suite** on hardware. |
+| **Change openpilot UI/manager** | Edit upstream files → refresh **`stage-b-openpilot-camera.patch`** with `git diff` from a clean tree and commit (or maintain a branch in your openpilot clone). |
+| **Document a milestone** | Add/update under **`docs/`** and a line in **`ELEGOO-PROJECT-STATE.md`**. |
+
+Always **`git status`** before commits; **`secrets.h`** and **`output/`** are **gitignored**.
+
+### 9. Safety and staging
+
+- Run **Stage C** (gated motor tests, clear area) before **unsupervised** bridge + openpilot on the floor.
+- Prefer **conservative** torque/PWM limits when tuning Stage E.
+- **Stop** path: bridge and firmware should send **`N=100`** stop on exit/disconnect when implemented — confirm in **`elegoo_openpilot_bridge.py`** / state doc.
+
+### 10. Documentation index (read in this order for depth)
+
+| Doc | Contents |
+|-----|----------|
+| **`ELEGOO-PROJECT-STATE.md`** | Stages A–E, gaps, **exact commands** (may assume parent workspace). |
+| **`docs/WORKING_WEBUI.md`** | ESP32 HTTP + WebSocket fix, `/stream`, flash workflow. |
+| **`docs/FIXES_ESP32_STA_AND_BRIDGE_2026-03-24.md`** | STA + soft AP, TCP bridge idle fix. |
+| **`docs/STAGE_A_STABLE_CAR_SERVICES.md`** | Stage A acceptance. |
+| **`docs/MAC_CONTROLS_CAR.md`** | Mac → TCP/100 → UNO, N=3 motor suite. |
+| **`docs/STAGE_B_CAMERA_OPENPILOT.md`** | Webcam in openpilot. |
+| **`docs/STAGE_D_OPENPILOT_NON_BLOCKERS.md`** | Log noise reference. |
+| **`openpilot-mods/README.md`** | Patch apply + env vars. |
+| **`esp32-s3/ESP32_CameraServer_AP_2023_V1.3/README.md`** | Sketch-specific URLs and behavior. |
+
+### 11. Troubleshooting (quick)
+
+| Symptom | Check |
+|---------|--------|
+| HTTP hangs / reset on `/` | Arduino **3.3+** `is_websocket` fix — **`docs/WORKING_WEBUI.md`**. |
+| Ping OK, HTTP fails | Firewall or wrong IP; **ARP** MAC `d0:cf:13:…` for ESP32. |
+| TCP :100 drops on LAN | STA+bridge idle logic — **`docs/FIXES_ESP32_STA_AND_BRIDGE_2026-03-24.md`**. |
+| Motor suite forward/back weird | **N=3** untimed vs **N=2** timed — **`docs/MAC_CONTROLS_CAR.md`**. |
+| openpilot “unavailable” / no torque | **`sendcan`** / **card** config — **`ELEGOO-PROJECT-STATE.md`**; not always a bridge bug. |
+
+---
+
 ## What problem this repo solves
 
 1. **Repeatable diagnostics** — Shell scripts for LAN, serial, `arduino-cli` compile checks.
@@ -128,7 +272,13 @@ Nothing here replaces ELEGOO’s or comma’s upstream docs; it **supplements** 
 | `docs/STAGE_B_CAMERA_OPENPILOT.md` | **Stage B:** camera works in openpilot UI (webcam / NOBOARD / MJPEG); links to patch + env vars. |
 | `docs/MAC_CONTROLS_CAR.md` | **Mac → TCP/100 → Serial2 → UNO** path; motor suite uses **N=3 untimed** forward/back (bridge reliability vs N=2 timed). |
 | `docs/STAGE_D_OPENPILOT_NON_BLOCKERS.md` | **Stage D:** openpilot moving wheels — symptom→cause table for **non-blocking** log noise (dirty tree, dbus, models, encoderd, PyAV/cv2, EKF, etc.). |
-| `README.md` (top sections) | **Living roadmap:** stack capabilities, **Stage E** (tuning + safety), **Stage F** (synthetic `carState`), execution order, **minimal easy setup** target. |
+| `README.md` (top sections) | **Living roadmap** + **Fresh agent onboarding** (this file): workspace layout, flash steps, file map, dev loop, doc index, troubleshooting. |
+| `scripts/elegoo_protocol.py` | ELEGOO **JSON** over TCP (`N=4`, `N=100` stop, heartbeats) — shared by motor suite and bridge. |
+| `scripts/elegoo_motor_test_suite.py` | Interactive **TCP/100** motor tests (gated prompts). |
+| `scripts/elegoo_live_capture.py` | Multi-stream logging (serial, TCP, HTTP); used by `run_live_capture.sh`. |
+| `scripts/elegoo_openpilot_bridge.py` | **openpilot → TCP** bridge (sendcan / torque); may be untracked until you `git add` it. |
+| `scripts/elegoo_control_map.py` | Torque→PWM mapping, stale-sendcan helpers; may be untracked until you `git add` it. |
+| `tests/test_elegoo_protocol.py` | **pytest** for protocol helpers (no car). |
 | `requirements.txt` | Optional Python deps (`pyserial`, `esptool`) for a local venv. |
 
 ---
