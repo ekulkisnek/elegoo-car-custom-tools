@@ -1451,6 +1451,9 @@ void startCameraServer() {
     httpd_register_uri_handler(camera_httpd, &cmd_uri);
     httpd_register_uri_handler(camera_httpd, &status_uri);
     httpd_register_uri_handler(camera_httpd, &capture_uri);
+    // Stock gzipped index HTML references "/stream" on the same origin (port 80). Stream was only
+    // registered on the second httpd (port 81), so the main page showed a broken/blank preview.
+    httpd_register_uri_handler(camera_httpd, &stream_uri);
     // httpd_register_uri_handler(camera_httpd, &bmp_uri);
 
     // httpd_register_uri_handler(camera_httpd, &xclk_uri);

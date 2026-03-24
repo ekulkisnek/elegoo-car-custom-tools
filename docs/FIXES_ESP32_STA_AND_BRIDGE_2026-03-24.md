@@ -45,7 +45,9 @@ Included for a **complete Arduino sketch folder**: `CameraWebServer_AP.h`, `came
 
 **Purpose:** A normal web page cannot open **TCP port 100** from JavaScript. The camera HTTP server (port 80 by default) exposes **`POST /elegoo_cmd`**, which reads a small JSON body and forwards it to **`Serial2`** via **`elegoo_forward_to_car()`** defined in the `.ino` (same path as the stock bridge).
 
-**Endpoints:** `GET /drive` serves a minimal page with MJPEG **`http://<host>:<camera_port+1>/stream`** and **Forward / Back / Left / Right / Stop**; **`POST /elegoo_cmd`** accepts the same JSON lines as the Python tools ([`elegoo_protocol.py`](../scripts/elegoo_protocol.py)); **`OPTIONS /elegoo_cmd`** for CORS preflight.
+**Endpoints:** `GET /drive` serves a minimal page with MJPEG and **Forward / Back / Left / Right / Stop**; **`POST /elegoo_cmd`** accepts the same JSON lines as the Python tools ([`elegoo_protocol.py`](../scripts/elegoo_protocol.py)); **`OPTIONS /elegoo_cmd`** for CORS preflight.
+
+**MJPEG / blank browser preview (important):** The stock gzipped index page requests **`/stream`** on the **same origin** as the UI (port **80**). This project originally registered **`stream_handler` only on the second HTTP server** (port **81**). So **`http://<ip>/stream` on port 80 did not exist** — the sidebar UI loaded but the camera image failed. **Fix:** register **`stream_uri` on `camera_httpd` (port 80)** as well; keep the second server on 81 for compatibility. The `/drive` page uses **`window.location.origin + '/stream'`**.
 
 **Safety:** Using the buttons **moves the car** — secure the chassis before testing.
 

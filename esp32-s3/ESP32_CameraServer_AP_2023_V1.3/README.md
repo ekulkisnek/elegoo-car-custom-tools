@@ -21,7 +21,7 @@ After flashing, on the **same Wi‑Fi as the ESP32 STA** (your home LAN):
 |------|-----|
 | Full camera UI (sidebar) | **`http://elegoo-car.local/`** |
 | Drive + stream + buttons | **`http://elegoo-car.local/drive`** |
-| MJPEG only | **`http://elegoo-car.local:81/stream`** |
+| MJPEG only | **`http://elegoo-car.local/stream`** (same port as the UI; **`:81/stream`** still works too) |
 
 If **`elegoo-car.local`** does not resolve (some routers block mDNS), use the **STA IP** printed on USB serial (`STA connected, IP: …`) instead of `elegoo-car.local`.
 
