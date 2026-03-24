@@ -37,6 +37,50 @@ index 95258e279..975e52734 100644
        else:
          self._scroller.scroll_to(self._rect.width)
        self._setup = True
+diff --git a/selfdrive/ui/mici/onroad/augmented_road_view.py b/selfdrive/ui/mici/onroad/augmented_road_view.py
+index 09d5d57fb..451196284 100644
+--- a/selfdrive/ui/mici/onroad/augmented_road_view.py
++++ b/selfdrive/ui/mici/onroad/augmented_road_view.py
+@@ -1,3 +1,4 @@
++import os
+ import time
+ import numpy as np
+ import pyray as rl
+@@ -37,6 +38,11 @@ ROAD_CAM_MIN_SPEED = 10  # m/s (25 mph)
+ CAM_Y_OFFSET = 20
+ 
+ 
++def _webcam_dev_mode() -> bool:
++  """NOBOARD / USE_WEBCAM: no comma Panda — hide misleading offroad overlay (e.g. ESP32 webcam dev)."""
++  return os.environ.get("NOBOARD") == "1" or os.environ.get("USE_WEBCAM") is not None
++
++
+ class BookmarkIcon(Widget):
+   PEEK_THRESHOLD = 50  # If icon peeks out this much, snap it fully visible
+   FULL_VISIBLE_OFFSET = 200  # How far onscreen when fully visible
+@@ -171,9 +177,9 @@ class AugmentedRoadView(CameraView):
+   def _update_state(self):
+     super()._update_state()
+ 
+-    # update offroad label
++    # update offroad label (webcam/NOBOARD dev: no "system booting" — there is no Panda)
+     if ui_state.panda_type == log.PandaState.PandaType.unknown:
+-      self._offroad_label.set_text("system booting")
++      self._offroad_label.set_text("" if _webcam_dev_mode() else "system booting")
+     else:
+       self._offroad_label.set_text("start the car to\nuse openpilot")
+ 
+@@ -244,8 +250,8 @@ class AugmentedRoadView(CameraView):
+ 
+     self._bookmark_icon.render(self.rect)
+ 
+-    # Draw darkened background and text if not onroad
+-    if not ui_state.started:
++    # Draw darkened background and text if not onroad (skip in webcam/NOBOARD dev so MJPEG preview is unobstructed)
++    if not ui_state.started and not _webcam_dev_mode():
+       rl.draw_rectangle(int(self.rect.x), int(self.rect.y), int(self.rect.width), int(self.rect.height), rl.Color(0, 0, 0, 175))
+       self._offroad_label.render(self._rect)
+ 
 diff --git a/system/manager/helpers.py b/system/manager/helpers.py
 index 047d0ac2d..b565bb044 100644
 --- a/system/manager/helpers.py
