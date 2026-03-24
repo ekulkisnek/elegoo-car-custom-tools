@@ -12,5 +12,8 @@ output/
 # OS / editor
 .DS_Store
 
+# PlatformIO
+.pio/
+
 # Local Wi‑Fi credentials for ESP32 camera sketch (copy from secrets.h.example)
 esp32-s3/ESP32_CameraServer_AP_2023_V1.3/secrets.h
