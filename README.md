@@ -2,6 +2,8 @@
 
 This repository holds **only personal tooling and documentation** for working with the **ELEGOO Smart Robot Car Kit V4.0** (ESP32-S3 camera module + Arduino UNO stack). It does **not** include the ELEGOO vendor firmware tree, PDFs, or large third-party projects—those stay in the official kit ZIP or upstream repos.
 
+**Resume / project state:** see **`ELEGOO-PROJECT-STATE.md`** at this repo root (stages A–E, gaps, copy-paste commands — we are **stuck in Stage E** control tuning until floor gains are dialed in).
+
 If you clone this repo, pair it with:
 
 - **ELEGOO Smart Robot Car Kit V4.0** (e.g. `2024.01.30` release) for the stock `SmartRobotCarV4.0.ino`, `ESP32_CameraServer_AP_2023_V1.3`, manuals, and APP assets.
@@ -24,6 +26,7 @@ Nothing here replaces ELEGOO’s documentation; it **supplements** your own work
 
 | Path | Purpose |
 |------|---------|
+| **`ELEGOO-PROJECT-STATE.md`** | **Master resume guide** (openpilot ↔ ELEGOO): accomplished stages, remaining gaps, workflows, commands. Paths assume parent workspace `elegoo-comma-1` with `scripts/` and `openpilot/` siblings. |
 | `scripts/esp32_full_flash_backup_chunked.py` | Chunked full SPI read for **ESP32-S3** via `esptool`; writes `output/` + a small manifest. |
 | `esp32-s3/shell/*.sh` | Bash helpers: connectivity, toolchain/SSH checks, optional LDT automation, WiFi sanity. |
 | `esp32-s3/WiFi_AP_SmokeTest/` | Minimal Arduino sketch: broadcasts `ELEGOO-SMOKE` soft AP (no camera). |
