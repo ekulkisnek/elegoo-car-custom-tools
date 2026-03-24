@@ -15,6 +15,18 @@ This sketch matches **ESP32-S3-WROOM-1** camera hardware from the ELEGOO Smart R
 
 ## Browser drive + stream (same tab)
 
-After flashing, open **`http://<ESP32-IP>/drive`** on the **main HTTP port** (usually 80). The page shows the MJPEG feed from **`http://<same-host>:81/stream`** (camera server uses port +1 for streaming) and **Forward / Back / Left / Right / Stop** buttons. Commands are sent as JSON via **`POST /elegoo_cmd`** to `Serial2` (same as TCP port 100). **Buttons can move the car** — secure the chassis before testing.
+After flashing, on the **same Wi‑Fi as the ESP32 STA** (your home LAN):
+
+| Page | URL |
+|------|-----|
+| Full camera UI (sidebar) | **`http://elegoo-car.local/`** |
+| Drive + stream + buttons | **`http://elegoo-car.local/drive`** |
+| MJPEG only | **`http://elegoo-car.local:81/stream`** |
+
+If **`elegoo-car.local`** does not resolve (some routers block mDNS), use the **STA IP** printed on USB serial (`STA connected, IP: …`) instead of `elegoo-car.local`.
+
+**Soft AP** (PC joined to `ELEGOO-…` Wi‑Fi): **`http://192.168.4.1/`** and **`http://192.168.4.1/drive`** (stream at **`:81/stream`**).
+
+The `/drive` page shows MJPEG from **port 81** and sends commands via **`POST /elegoo_cmd`** to `Serial2`. **Buttons can move the car** — secure the chassis before testing.
 
 See `docs/FIXES_ESP32_STA_AND_BRIDGE_2026-03-24.md` for what changed and why.

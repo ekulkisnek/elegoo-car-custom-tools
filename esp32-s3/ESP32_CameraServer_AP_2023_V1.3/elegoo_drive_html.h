@@ -16,6 +16,7 @@ static const char ELEGOO_DRIVE_HTML[] =
     "#status{font-size:12px;color:#888;margin-top:8px;word-break:break-all;}"
     "</style></head><body><div id=\"wrap\">"
     "<h2 style=\"margin:8px 0;font-size:1.1rem;\">Camera + drive</h2>"
+    "<p style=\"margin:0 0 12px;font-size:13px;\"><a href=\"/\" style=\"color:#8cf;\">Full ESP camera UI (sidebar)</a></p>"
     "<img id=\"cam\" alt=\"stream\"/>"
     "<div class=\"row\">"
     "<button type=\"button\" id=\"stop\">Stop</button>"

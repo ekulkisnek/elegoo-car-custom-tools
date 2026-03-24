@@ -35,6 +35,7 @@
 #include "camera_pins.h"
 #include "esp_system.h"
 #include "secrets.h"
+#include <ESPmDNS.h>
 
 // #include "BLEAdvertisedDevice.h"
 // BLEAdvertisedDevice _BLEAdvertisedDevice;
@@ -163,6 +164,7 @@ void CameraWebServer_AP::CameraWebServer_AP_Init(void)
   WiFi.softAP(mac_default, password, 9);
   WiFi.disconnect(true, true);
   delay(200);
+  WiFi.setHostname("elegoo-car");
   Serial.print("STA SSID: ");
   Serial.println(HOME_WIFI_SSID);
   WiFi.begin(HOME_WIFI_SSID, HOME_WIFI_PASS);
@@ -180,6 +182,17 @@ void CameraWebServer_AP::CameraWebServer_AP_Init(void)
     Serial.println(WiFi.localIP());
     Serial.print("STA channel: ");
     Serial.println(WiFi.channel());
+    if (MDNS.begin("elegoo-car")) {
+      MDNS.addService("http", "tcp", 80);
+      MDNS.addService("http", "tcp", 81);
+      Serial.println("--- Browser (same LAN as STA) ---");
+      Serial.println("  http://elegoo-car.local/");
+      Serial.println("  http://elegoo-car.local/drive");
+      Serial.println("  MJPEG: http://elegoo-car.local:81/stream");
+      Serial.println("  (or use STA IP above if .local fails)");
+    } else {
+      Serial.println("mDNS failed — use STA IP printed above.");
+    }
   } else {
     Serial.print("STA not connected, status=");
     Serial.println((int)WiFi.status());
@@ -193,5 +206,5 @@ void CameraWebServer_AP::CameraWebServer_AP_Init(void)
 
   startCameraServer();
 
-  Serial.println("Camera Ready! Browser: STA http://<STA_IP>/  or  AP http://192.168.4.1/");
+  Serial.println("Camera ready. Soft AP: http://192.168.4.1/  http://192.168.4.1/drive");
 }
