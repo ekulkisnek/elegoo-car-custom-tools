@@ -110,6 +110,30 @@ For **public-key** SSH tests against **`esp32@host`**. Requires **`SSH_KEY`** en
 
 Uses **`ELEGOO_VENV`** for Python (default **`repo/.venv-serial`**) with **pyserial** for the serial read.
 
+### `scripts/elegoo_live_capture.py` + `esp32-s3/shell/run_live_capture.sh`
+
+Continuous capture for the streams that matter most during bring-up:
+
+- **ESP32 USB serial**
+- **UNO USB serial**
+- **TCP bridge** on port **`100`** with automatic **`{Heartbeat}`** replies
+- **HTTP `/status`** polling
+- **HTTP `/stream`** monitoring on port **`81`**
+
+Default output goes to **`output/live-capture/<UTC timestamp>/`** with one log per stream plus raw byte captures for serial/TCP. The MJPEG stream is monitored continuously by default and can optionally be saved with **`--save-mjpeg`**.
+
+Example:
+
+```bash
+./esp32-s3/shell/run_live_capture.sh --host 192.168.1.123
+```
+
+If mDNS is working, you can also use:
+
+```bash
+./esp32-s3/shell/run_live_capture.sh --host elegoo-car.local
+```
+
 ---
 
 ### `esp32-s3/WiFi_AP_SmokeTest`
