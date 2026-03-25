@@ -1,6 +1,6 @@
 # ELEGOO ↔ openpilot project — state and resume guide
 
-**Last updated:** 2025-03-24 (local)  
+**Last updated:** 2026-03-25 evening (local)  
 **Repo root (this machine):** `/Users/lukekensik/coding/elegoo-comma-1`
 
 This file is the **single place to re-orient** after a break: what works, what is left, and how we work day to day.
@@ -14,21 +14,52 @@ This file is the **single place to re-orient** after a break: what works, what i
 | **Stage A** — car TCP :100, heartbeat, stock JSON motor protocol | Done (see `STAGE-A-STABLE-CAR-SERVICES.md`, Stage C docs) | ESP ↔ UNO path understood |
 | **Stage B** — openpilot on macOS with **webcam/MJPEG** road cam | Done in tooling | `USE_WEBCAM=1`, `run_openpilot_manager_macos.sh`, ESP stream |
 | **Stage C** — gated motor tests, motor suite | Done | `elegoo_motor_test_suite.py`, `scripts/stage-c-verify/` |
-| **Stage D** — Python **bridge**: `SubMaster(sendcan)` → `PubMaster(can, pandaStates)` → TCP **N=4** `TORQUE_CMD` → ELEGOO | Done | [`elegoo_openpilot_bridge.py`](elegoo-car-custom-tools/scripts/elegoo_openpilot_bridge.py), body `carstate` RX fix, [`artifacts/stage-d/STAGE-D-VERIFY.md`](artifacts/stage-d/STAGE-D-VERIFY.md) |
-| **Stage E (control tuning)** — deadband, scale, bias, PWM clamp, smoothing, **stale sendcan** watchdog, **`--stale-sendcan-stop`** | Implemented + tested | [`elegoo_control_map.py`](elegoo-car-custom-tools/scripts/elegoo_control_map.py), CLI flags on bridge |
-| **Sendcan diagnostics** — `sendcan_is_stale()`, integration tests, sanity shell script | Done | [`test_sendcan_stale_and_bridge.py`](scripts/stage-d-verify/test_sendcan_stale_and_bridge.py), `run_sendcan_bridge_sanity.sh` |
-| **Automated verify** | Done | Pytest (Stage E + sendcan + Stage D) + plumbing smoke |
+| **Stage D** — Python **bridge**: `SubMaster(sendcan)` → `PubMaster(can, pandaStates)` → TCP | Done | [`elegoo_openpilot_bridge.py`](elegoo-car-custom-tools/scripts/elegoo_openpilot_bridge.py), body `carstate` RX fix |
+| **Stage E (control tuning + engagement chain)** — deadband, scale, bias, speed clamp, smoothing, stale-sendcan, engagement fixes | Done | [`elegoo_control_map.py`](elegoo-car-custom-tools/scripts/elegoo_control_map.py), CLI flags on bridge |
+| **Stage E motor protocol fix** — discovered N=4 is forward-only unsigned speed; switched to N=4 forward + N=3 backward/pivot + N=100 stop | Done | `cmd_motor_pair()` in [`elegoo_protocol.py`](elegoo-car-custom-tools/scripts/elegoo_protocol.py), hardware-verified |
+| **Stage F (synthetic feedback)** — estimated wheel speeds, fault state, CAN 516 MOTORS_CURRENT | Done | Bridge derives SPEED_L/R from commanded speed; FAULT bit on TCP disconnect |
+| **Unified launcher** | Done | [`run_elegoo_openpilot_full.sh`](scripts/stage-e-verify/run_elegoo_openpilot_full.sh) — starts bridge → manager → optional joystick |
+| **Automated verify** | Done | 31 tests across 4 test files: Stage E control (10), Stage D bridge (8), sendcan stale (5), final validation (15) |
+| **Full stack live run** | Partially done | All processes green (card, selfdrived, joystickd, etc.), torque flowing to car via N=4, but speed values too low to visibly move wheels — needs tuning |
+| **Bench tuning (this session)** | Done | Diagnosed low loop gain (torque_scale=0.35 gave gain 0.24); raised to 2.0 (gain ~0.96). Added `--feedback-alpha` CLI. speed_max=100, deadband=10, accel=0.5. Fixed joystick foreground. Speed sweep poke added. |
 
 ---
 
 ## What remains / known gaps
 
-| Item | Owner | Notes |
-|------|--------|--------|
-| **Real `sendcan` from openpilot** when UI says “unavailable” | You + OP config | **`card`** must publish **`sendcan`** with **`TORQUE_CMD`**; bridge only passes through if messages exist. Use **`emit_torque_sendcan.py`** to prove the bridge path without full engagement. |
-| **Full openpilot “green” on Mac** (model blobs, encoderd, loggerd, EKF) | Optional | **Not required** for motor bridge; noisy logs are expected. |
-| **Stage E floor tuning** | You | Adjust `--torque-scale`, `--deadband`, `--bias-l/r`, `--pwm-min/max`, `--smooth-alpha`; add **`--stale-sendcan-stop`** if wheels creep at neutral. |
-| **Stage F (if any)** | TBD | Not defined in repo; next features are your choice (e.g. logging, planner-in-loop). |
+| Item | Priority | Notes |
+|------|----------|--------|
+| **Live bench WASD verification** | HIGH | Run `./scripts/stage-e-verify/run_elegoo_openpilot_full.sh --live --joystick` — joystick now runs foreground. Verify W/S/A/D produce visible wheel motion with new tuned parameters. |
+| **Stage E floor tuning** | NEXT | Car on floor — tune `--torque-scale`, `--deadband`, `--bias-l/r`, `--speed-max`, `--smooth-alpha` for straight driving, turning, stops. |
+| **Stage F enhancements** | TBD | Add dynamics (acceleration ramp, slip model), integrate real telemetry if ELEGOO provides it. |
+
+---
+
+## Critical technical findings (this session)
+
+### 1. ELEGOO motor command mapping (from firmware source)
+
+The Arduino UNO firmware (`ApplicationFunctionSet_xxx0.cpp`, `DeviceDriverSet_xxx0.cpp`) reveals:
+
+- **N=4** (`CMD_MotorControlSpeed`): Always uses `direction_just` (forward). D1/D2 are **unsigned speed 0-255**. `D1=0, D2=0` calls the stop handler. **Cannot reverse.**
+- **N=3** (`CMD_CarControlNoTimeLimit`): Direction enum (1=Left, 2=Right, 3=Forward, 4=Backward) with single speed for both motors.
+- **N=1** (`CMD_MotorControl`): Per-motor selection, but passes `direction_void` for the OTHER motor which **sets TB6612 STBY=LOW, disabling the entire motor driver**. Sequential N=1 commands kill each other.
+- **N=100**: Stop (sets both motors to `direction_void`, STBY=LOW).
+- **Motor A = right wheel, Motor B = left wheel** (confirmed by firmware comments and hardware tests).
+
+### 2. Signed speed mapping
+
+The old mapping (`NEUTRAL_PWM=128`, range 0-255) was wrong. The new mapping:
+- Torque [-500, +500] → signed speed [-255, +255] (0 = stop)
+- `cmd_motor_pair(speed_l, speed_r)` selects the right ELEGOO command:
+  - Both ≥ 0 → N=4 (forward differential, independent per-motor speed)
+  - Both ≤ 0 → N=3 backward (average speed, loses differential)
+  - Mixed signs → N=3 left/right pivot (average speed)
+  - Both = 0 → N=100 stop
+
+### 3. D1/D2 ↔ left/right "swap"
+
+In N=4: `D1 → Motor A (right wheel)`, `D2 → Motor B (left wheel)`. Our bridge passes `speed_l → D1 → right wheel`. This looks swapped, but the full chain (openpilot `TORQUE_L` → `speed_l` → `D1` → right motor) is **consistently** swapped, so turning behavior is correct. Verified by tracing through firmware turn logic.
 
 ---
 
@@ -36,10 +67,11 @@ This file is the **single place to re-orient** after a break: what works, what i
 
 1. **Always `cd` into the repo** before `./scripts/...` (paths are relative to repo root).
 2. **Openpilot Python** uses **`openpilot/.venv`** — scripts that run bridge/tests `source` it via wrapper shells.
-3. **Two common paths:**
+3. **Three common paths:**
    - **Software only:** run **`run_stage_e_verify.sh`** (or **`run_stage_d_verify.sh`**).
-   - **Hardware + car:** **Terminal A** = manager; **Terminal B** = live bridge with **`CAR_IP`**.
-4. **When debugging “no torque”:** run **`emit_torque_sendcan.py`** + bridge **dry-run**, or **`run_sendcan_bridge_sanity.sh`**, to separate **messaging** from **openpilot**.
+   - **Full stack (software, no car):** `./scripts/stage-e-verify/run_elegoo_openpilot_full.sh`
+   - **Full stack (with car):** `CAR_IP=x.x.x.x ./scripts/stage-e-verify/run_elegoo_openpilot_full.sh --live --joystick`
+4. **When debugging "no torque":** run **`emit_torque_sendcan.py`** + bridge **dry-run**, or **`run_sendcan_bridge_sanity.sh`**, to separate **messaging** from **openpilot**.
 5. **Docs:** stage-specific truth in **`artifacts/stage-*/`** and **`docs/`** under `elegoo-car-custom-tools`; strategy in **`STAGE-D-OPENPILOT-ELEGOO-BRIDGE.md`**.
 
 ---
@@ -48,17 +80,6 @@ This file is the **single place to re-orient** after a break: what works, what i
 
 Replace `CAR_IP` if your ESP32 is not `192.168.1.191`.
 
-### One-time: make scripts executable
-
-```bash
-cd /Users/lukekensik/coding/elegoo-comma-1
-chmod +x scripts/stage-e-verify/run_stage_e_verify.sh \
-  scripts/stage-d-verify/run_stage_d_verify.sh \
-  scripts/stage-d-verify/run_stage_d_bridge.sh \
-  scripts/stage-b-verify/run_openpilot_manager_macos.sh \
-  scripts/stage-d-verify/run_sendcan_bridge_sanity.sh
-```
-
 ### Full automated test suite (no car, needs `openpilot/.venv`)
 
 ```bash
@@ -66,80 +87,50 @@ cd /Users/lukekensik/coding/elegoo-comma-1
 ./scripts/stage-e-verify/run_stage_e_verify.sh
 ```
 
-**Look for:** `10 passed` (control), `5 passed` (sendcan), `8 passed` (bridge), plumbing line, then `Stage E automated verify: PASS`.
+**Look for:** 30 tests pass across control, bridge, sendcan, and final validation test files.
 
-Alternate (includes same tests + order in Stage D script):
+### Full stack: unified launcher (recommended)
 
-```bash
-cd /Users/lukekensik/coding/elegoo-comma-1
-./scripts/stage-d-verify/run_stage_d_verify.sh
-```
-
-**Look for:** `Stage D automated verify: PASS` at the end.
-
-### Sendcan path sanity (emitter + bridge dry-run, no openpilot)
+**Software only (dry-run, no car required):**
 
 ```bash
 cd /Users/lukekensik/coding/elegoo-comma-1
-./scripts/stage-d-verify/run_sendcan_bridge_sanity.sh
+./scripts/stage-e-verify/run_elegoo_openpilot_full.sh
 ```
 
-**Look for:** `dry-run` lines with **non-zero** `TORQUE_L` / `TORQUE_R` and `stale=False`, then `sendcan + bridge sanity: PASS`.
-
-### Manual: synthetic `sendcan` only (two terminals)
-
-**Terminal 1**
-
-```bash
-cd /Users/lukekensik/coding/elegoo-comma-1/openpilot && source .venv/bin/activate
-export PYTHONPATH="$PWD:$PWD/rednose_repo"
-python3 ../scripts/stage-d-verify/emit_torque_sendcan.py
-```
-
-**Terminal 2**
-
-```bash
-cd /Users/lukekensik/coding/elegoo-comma-1
-./scripts/stage-d-verify/run_stage_d_bridge.sh --mode dry-run --stale-sendcan-sec 0 --log-every-n 50
-```
-
-**Look for:** changing torque values in **`[dry-run]`** lines. **Ctrl+C** both when done.
-
-### Live on hardware: openpilot + bridge (two terminals)
-
-**Terminal A — openpilot manager + UI**
+**With car + keyboard control:**
 
 ```bash
 cd /Users/lukekensik/coding/elegoo-comma-1
 export CAR_IP=192.168.1.191
-./scripts/stage-b-verify/run_openpilot_manager_macos.sh
+./scripts/stage-e-verify/run_elegoo_openpilot_full.sh --live --joystick
 ```
 
-**Look for:** process list including **`webcamerad`**, **`ui`**, **`card`**; live camera in UI is OK even if overlay says “unavailable”.
-
-**Terminal B — ELEGOO bridge (TCP port 100)**
+### Quick hardware poke tests (car on bench, wheels off ground)
 
 ```bash
 cd /Users/lukekensik/coding/elegoo-comma-1
-export CAR_IP=192.168.1.191
-./scripts/stage-d-verify/run_stage_d_bridge.sh --mode live --tcp-host "$CAR_IP" \
-  --tcp-send-hz 15 \
-  --torque-scale 0.35 \
-  --deadband 15 \
-  --pwm-min 90 \
-  --pwm-max 166 \
-  --smooth-alpha 0.35 \
-  --stale-sendcan-sec 0.5 \
-  --control-log
+python3 scripts/stage-e-verify/hardware_poke.py --host 192.168.1.191 --poke n1_motors
 ```
 
-**Look for:** **`[control]`** lines with **`ok`** (not only `stale_sendcan`); **`tl`/`tr`** non-zero when OP commands torque. If you only see **`stale_sendcan`** and **`tl=0`**, **`sendcan`** is not updating — fix OP/emitter path first.
+### Direct motor test (one-liner, no openpilot needed)
 
-**Optional — send firmware stop when stale instead of neutral N=4:**
-
-Add **`--stale-sendcan-stop`** to the same command (helps if wheels creep).
-
-**Stop:** **Ctrl+C** in Terminal B (bridge sends **`N=100`** stop), then **Ctrl+C** in Terminal A if you want to quit openpilot.
+```bash
+cd /Users/lukekensik/coding/elegoo-comma-1 && python3 -c "
+import socket, time, sys
+sys.path.insert(0, 'elegoo-car-custom-tools/scripts')
+from elegoo_protocol import cmd_motor_pair, cmd_stop
+sock = socket.create_connection(('192.168.1.191', 100), timeout=5)
+sock.sendall((cmd_stop() + '\n').encode())
+time.sleep(0.3)
+for c in cmd_motor_pair(80, 80):
+    sock.sendall((c + '\n').encode())
+time.sleep(3.0)
+try: sock.sendall((cmd_stop() + '\n').encode())
+except: pass
+sock.close()
+"
+```
 
 ---
 
@@ -147,12 +138,16 @@ Add **`--stale-sendcan-stop`** to the same command (helps if wheels creep).
 
 | Path | Role |
 |------|------|
-| [`elegoo-car-custom-tools/scripts/elegoo_openpilot_bridge.py`](elegoo-car-custom-tools/scripts/elegoo_openpilot_bridge.py) | Main bridge |
-| [`elegoo-car-custom-tools/scripts/elegoo_control_map.py`](elegoo-car-custom-tools/scripts/elegoo_control_map.py) | Torque→PWM + `sendcan_is_stale` |
-| [`elegoo-car-custom-tools/scripts/elegoo_protocol.py`](elegoo-car-custom-tools/scripts/elegoo_protocol.py) | ELEGOO JSON (`N=4`, `N=100` stop) |
-| [`scripts/stage-e-verify/README.md`](scripts/stage-e-verify/README.md) | Bridge usage + troubleshooting |
-| [`scripts/stage-d-verify/README.md`](scripts/stage-d-verify/README.md) | Verify scripts index |
-| [`artifacts/stage-d/STAGE-D-VERIFY.md`](artifacts/stage-d/STAGE-D-VERIFY.md) | Spec checklist + non-blockers |
+| [`elegoo-car-custom-tools/scripts/elegoo_openpilot_bridge.py`](elegoo-car-custom-tools/scripts/elegoo_openpilot_bridge.py) | Main bridge (CAN, pandaStates, TCP, speed estimation, fault feedback) |
+| [`elegoo-car-custom-tools/scripts/elegoo_control_map.py`](elegoo-car-custom-tools/scripts/elegoo_control_map.py) | Torque→signed speed + `sendcan_is_stale` (NEUTRAL_SPEED=0, SpeedSmoother) |
+| [`elegoo-car-custom-tools/scripts/elegoo_protocol.py`](elegoo-car-custom-tools/scripts/elegoo_protocol.py) | ELEGOO JSON (`cmd_motor_pair` → N=4/N=3/N=100, `cmd_motor_speed`, `cmd_stop`) |
+| [`scripts/stage-e-verify/elegoo_joystick.py`](scripts/stage-e-verify/elegoo_joystick.py) | testJoystick publisher (keyboard WASD / constant) |
+| [`scripts/stage-e-verify/run_elegoo_openpilot_full.sh`](scripts/stage-e-verify/run_elegoo_openpilot_full.sh) | Unified launcher (bridge → manager → joystick) |
+| [`scripts/stage-e-verify/test_final_validation.py`](scripts/stage-e-verify/test_final_validation.py) | 12 computational tests for live config (speed clamp, stale, PID, feedback, smoothing) |
+| [`scripts/stage-e-verify/hardware_poke.py`](scripts/stage-e-verify/hardware_poke.py) | Quick N=1 hardware poke tests (stop, per-motor ID, reverse) |
+| [`scripts/stage-b-verify/run_openpilot_manager_macos.sh`](scripts/stage-b-verify/run_openpilot_manager_macos.sh) | Manager launcher (env vars for body fingerprint) |
+| [`openpilot/selfdrive/selfdrived/selfdrived.py`](openpilot/selfdrive/selfdrived/selfdrived.py) | Modified: ignores model/DM/planner services for notCar |
+| ELEGOO firmware source | `ELEGOO Smart Robot Car Kit V4.0 2024.01.30/02 Manual & Main Code & APP/02 Main Program   (Arduino UNO)/TB6612 & QMI8658C/SmartRobotCarV4.0_V2_20220322/` |
 
 ---
 

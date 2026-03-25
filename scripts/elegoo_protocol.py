@@ -80,6 +80,34 @@ def cmd_motor_speed(left_speed: int, right_speed: int, header_prefix: str = "mot
     return framed_json(with_header({"N": 4, "D1": left_speed, "D2": right_speed}, header_prefix))
 
 
+def cmd_motor_pair(speed_l: int, speed_r: int) -> list[str]:
+    """Convert signed speeds (-255..+255) to ELEGOO motor commands.
+
+    Uses N=4 for forward (differential speeds), N=3 for backward/pivot,
+    N=100 for stop.  N=1 is avoided because its direction_void disables
+    the TB6612 STBY pin, killing the other motor.
+
+    Note: speed_l maps to D1 → Motor A (right wheel),
+          speed_r maps to D2 → Motor B (left wheel).
+    The full chain (openpilot TORQUE_L/R → speed_l/r → D1/D2) is
+    consistently "swapped" so the car behaves correctly.
+    """
+    if speed_l == 0 and speed_r == 0:
+        return [cmd_stop()]
+
+    if speed_l >= 0 and speed_r >= 0:
+        return [cmd_motor_speed(speed_l, speed_r)]
+
+    if speed_l <= 0 and speed_r <= 0:
+        avg = (abs(speed_l) + abs(speed_r)) // 2
+        return [cmd_car_untimed(Direction.BACKWARD, max(avg, 1))]
+
+    avg = (abs(speed_l) + abs(speed_r)) // 2
+    if speed_l > 0:
+        return [cmd_car_untimed(Direction.LEFT, max(avg, 1))]
+    return [cmd_car_untimed(Direction.RIGHT, max(avg, 1))]
+
+
 def cmd_rocker(direction: int, header_prefix: str = "rocker") -> str:
     return framed_json(with_header({"N": 102, "D1": direction}, header_prefix))
 
