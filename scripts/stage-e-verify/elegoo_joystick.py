@@ -10,9 +10,9 @@ Keyboard (when --keyboard):
   W / ↑  = forward         S / ↓  = backward
   A / ←  = pivot left      D / →  = pivot right
   E      = arc fwd-right   Q      = arc fwd-left
-  Z      = arc back-left   C      = arc back-right
+  Z      = arc back-left   X / C  = arc back-right
   SPACE  = stop (zero both axes)
-  X      = quit
+  ESC    = quit
 
 Without --keyboard, publishes a constant (--accel, --steer) pair.
 """
@@ -55,13 +55,13 @@ def _keyboard_loop(pm: messaging.PubMaster, accel_max: float, steer_max: float, 
     accel = 0.0
     steer = 0.0
     last_key_mono = time.monotonic()
-    deadman_sec = 0.50
+    deadman_sec = 0.35
 
     print(f"[joystick] keyboard mode  accel_max={accel_max:.2f}  steer_max={steer_max:.2f}", flush=True)
     print("  W/↑=fwd  S/↓=back  A/←=pivot-L  D/→=pivot-R", flush=True)
     print("  Q=arc-fwd-left  E=arc-fwd-right", flush=True)
-    print("  Z=arc-back-left  C=arc-back-right", flush=True)
-    print("  SPACE=stop  X=quit", flush=True)
+    print("  Z=arc-back-left  X/C=arc-back-right", flush=True)
+    print("  SPACE=stop  ESC=quit", flush=True)
 
     try:
         tty.setcbreak(fd)
@@ -78,10 +78,10 @@ def _keyboard_loop(pm: messaging.PubMaster, accel_max: float, steer_max: float, 
                         ch = "d"
                     elif seq == "[D":
                         ch = "a"
+                    elif seq == "":
+                        break
                 ch = ch.lower()
-                if ch == "x":
-                    break
-                elif ch == "w":
+                if ch == "w":
                     accel = accel_max
                     steer = 0.0
                 elif ch == "s":
@@ -102,7 +102,7 @@ def _keyboard_loop(pm: messaging.PubMaster, accel_max: float, steer_max: float, 
                 elif ch == "z":
                     accel = -accel_max
                     steer = -steer_max
-                elif ch == "c":
+                elif ch in ("c", "x"):
                     accel = -accel_max
                     steer = steer_max
                 elif ch == " ":

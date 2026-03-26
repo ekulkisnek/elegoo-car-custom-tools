@@ -46,7 +46,14 @@ from elegoo_control_map import (  # noqa: E402
     map_torques_to_speed_pair,
     sendcan_is_stale,
 )
-from elegoo_protocol import HEARTBEAT_FRAME, cmd_motor_pair, cmd_stop  # noqa: E402
+from elegoo_protocol import (  # noqa: E402
+    HEARTBEAT_FRAME,
+    Direction,
+    cmd_car_untimed,
+    cmd_motor_pair,
+    cmd_motor_speed,
+    cmd_stop,
+)
 
 DBC_NAME = "comma_body"
 MAX_OP_TORQUE = 500
@@ -248,6 +255,7 @@ class ElegooOpenpilotBridge:
         control_log: bool = False,
         stale_sendcan_stop: bool = False,
         feedback_alpha: float = 0.15,
+        joystick_direct: bool = False,
     ) -> None:
         self.mode = mode
         self.tcp_host = tcp_host
@@ -259,12 +267,16 @@ class ElegooOpenpilotBridge:
         self.control_log = control_log
         self.stale_sendcan_stop = stale_sendcan_stop
         self.feedback_alpha = max(0.01, min(1.0, float(feedback_alpha)))
+        self.joystick_direct = joystick_direct
         self._smoother = SpeedSmoother(self.control.smooth_alpha)
         self.packer = CANPacker(DBC_NAME)
         self.torque_parser = CANParser(DBC_NAME, [("TORQUE_CMD", 100)], 0)
+        subs = ["sendcan", "carParams"]
+        if joystick_direct:
+            subs.append("testJoystick")
         self.sm = messaging.SubMaster(
-            ["sendcan", "carParams"],
-            ignore_alive=["carParams"],
+            subs,
+            ignore_alive=["carParams"] + (["testJoystick"] if joystick_direct else []),
         )
         self.pm = messaging.PubMaster(["can", "pandaStates"])
         self.tcp: TcpHeartbeatClient | None = None
@@ -280,6 +292,8 @@ class ElegooOpenpilotBridge:
         self._est_speed_l = 0.0
         self._est_speed_r = 0.0
         self._tcp_fault = False
+        self._direct_accel = 0.0
+        self._direct_steer = 0.0
 
     def _ensure_tcp(self) -> None:
         if self.mode != "live" or not self.tcp_host:
@@ -320,7 +334,99 @@ class ElegooOpenpilotBridge:
             return None
         return float(vl["TORQUE_L"]), float(vl["TORQUE_R"])
 
+    def _direct_map_commands(self, accel: float, steer: float) -> list[str]:
+        """Map joystick axes directly to ELEGOO motor commands (no PID)."""
+        speed_max = self.control.speed_max
+        base = int(abs(accel) * speed_max)
+        turn = int(abs(steer) * speed_max)
+        dead = max(3, self.control.speed_min)
+
+        if base < dead and turn < dead:
+            return [cmd_stop()]
+
+        if base < dead:
+            if steer > 0:
+                return [cmd_car_untimed(Direction.RIGHT, turn)]
+            return [cmd_car_untimed(Direction.LEFT, turn)]
+
+        if accel > 0:
+            if turn < dead:
+                return [cmd_motor_speed(base, base)]
+            slow = max(0, base - turn)
+            if steer > 0:
+                return [cmd_motor_speed(slow, base)]
+            return [cmd_motor_speed(base, slow)]
+
+        if turn < dead:
+            return [cmd_car_untimed(Direction.BACKWARD, base)]
+        if steer > 0:
+            return [cmd_car_untimed(Direction.RIGHT, max(base, turn))]
+        return [cmd_car_untimed(Direction.LEFT, max(base, turn))]
+
+    def _direct_joystick_step(self) -> None:
+        """Step function for joystick-direct mode: read testJoystick, send motor commands."""
+        self.sm.update(0)
+        if self.sm.updated["carParams"]:
+            try:
+                self._alt_exp = int(self.sm["carParams"].alternativeExperience)
+            except Exception:
+                self._alt_exp = 0
+
+        if self.sm.updated["testJoystick"]:
+            axes = self.sm["testJoystick"].axes
+            self._direct_accel = float(axes[0]) if len(axes) > 0 else 0.0
+            self._direct_steer = float(axes[1]) if len(axes) > 1 else 0.0
+
+        if self.sm.updated["sendcan"]:
+            self._last_sendcan_mono = time.monotonic()
+
+        tcp_fault = self._tcp_connection_lost.is_set() if self.mode == "live" else False
+        self._tcp_fault = tcp_fault
+        self._est_speed_l = self._direct_accel * self.control.speed_max
+        self._est_speed_r = self._direct_accel * self.control.speed_max
+        can_msgs = build_synthetic_can_msgs(
+            self.packer,
+            speed_l=self._est_speed_l,
+            speed_r=self._est_speed_r,
+            fault=tcp_fault,
+        )
+        self.pm.send("can", can_list_to_can_capnp(can_msgs, msgtype="can", valid=True))
+
+        if self._loop_count % 20 == 0:
+            self.pm.send("pandaStates", make_panda_states_msg(self._alt_exp))
+
+        motor_cmds = self._direct_map_commands(self._direct_accel, self._direct_steer)
+        motor_line = "".join(c + "\n" for c in motor_cmds)
+
+        self._loop_count += 1
+        now = time.monotonic()
+        if self.control_log and self._loop_count % self.log_every_n == 0:
+            base = int(abs(self._direct_accel) * self.control.speed_max)
+            turn = int(abs(self._direct_steer) * self.control.speed_max)
+            print(
+                f"[direct] t={now:.3f} accel={self._direct_accel:.2f} steer={self._direct_steer:.2f} "
+                f"base={base} turn={turn}",
+                flush=True,
+            )
+
+        if self.mode == "live":
+            self._ensure_tcp()
+            assert self.tcp is not None
+            send_allowed = (now - self._last_tcp_send_mono) >= tcp_send_interval_sec(self.tcp_send_hz)
+            if send_allowed:
+                try:
+                    self.tcp.send_line(motor_line)
+                    self._last_tcp_send_mono = now
+                except OSError as e:
+                    if not self._tcp_send_fail_logged:
+                        print(f"[live] TCP send failed: {e}", file=sys.stderr, flush=True)
+                        self._tcp_send_fail_logged = True
+
     def step(self) -> None:
+        if self.joystick_direct:
+            self._direct_joystick_step()
+            return
+
         self.sm.update(0)
         if self.sm.updated["carParams"]:
             try:
@@ -359,9 +465,22 @@ class ElegooOpenpilotBridge:
         )
         speed_l, speed_r = self._smoother.step(raw_l, raw_r)
 
-        a = self.feedback_alpha
-        self._est_speed_l = a * float(speed_l) + (1.0 - a) * self._est_speed_l
-        self._est_speed_r = a * float(speed_r) + (1.0 - a) * self._est_speed_r
+        if speed_l == 0 and speed_r == 0:
+            self._est_speed_l *= 0.999
+            self._est_speed_r *= 0.999
+        elif speed_l >= 0 and speed_r >= 0:
+            a = self.feedback_alpha
+            self._est_speed_l = a * float(speed_l) + (1.0 - a) * self._est_speed_l
+            self._est_speed_r = a * float(speed_r) + (1.0 - a) * self._est_speed_r
+        else:
+            avg_mag = (abs(speed_l) + abs(speed_r)) / 2.0
+            sl_sign = -1.0 if speed_l < 0 else 1.0
+            sr_sign = -1.0 if speed_r < 0 else 1.0
+            a = self.feedback_alpha
+            prev_avg = (abs(self._est_speed_l) + abs(self._est_speed_r)) / 2.0
+            est_mag = a * avg_mag + (1.0 - a) * prev_avg
+            self._est_speed_l = sl_sign * est_mag
+            self._est_speed_r = sr_sign * est_mag
 
         motor_cmds = cmd_motor_pair(speed_l, speed_r)
         motor_line = "".join(c + "\n" for c in motor_cmds)
@@ -505,6 +624,11 @@ def main() -> int:
         default=0.15,
         help="Synthetic speed feedback EMA alpha (0.01=slow, 1.0=instant; default 0.15)",
     )
+    ap.add_argument(
+        "--joystick-direct",
+        action="store_true",
+        help="Read testJoystick and map directly to motor commands (bypasses PID)",
+    )
     args = ap.parse_args()
 
     if args.mode == "live" and not args.tcp_host:
@@ -535,6 +659,7 @@ def main() -> int:
         control_log=args.control_log,
         stale_sendcan_stop=args.stale_sendcan_stop,
         feedback_alpha=args.feedback_alpha,
+        joystick_direct=args.joystick_direct,
     )
     bridge.run(args.duration)
     return 0

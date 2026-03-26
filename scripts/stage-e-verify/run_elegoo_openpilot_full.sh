@@ -52,7 +52,12 @@ echo "[launcher] starting bridge (mode=$MODE)..."
 
 BRIDGE_CMD="python3 $ROOT/elegoo-car-custom-tools/scripts/elegoo_openpilot_bridge.py --mode $MODE --log-every-n 100 --control-log"
 if [ "$MODE" = "live" ]; then
-  BRIDGE_CMD="$BRIDGE_CMD --tcp-host $CAR_IP --tcp-send-hz 15 --torque-scale 2.0 --deadband 15 --speed-min 8 --speed-max 100 --smooth-alpha 0.5 --feedback-alpha 0.15 --stale-sendcan-sec 0.5 --stale-sendcan-stop"
+  BRIDGE_CMD="$BRIDGE_CMD --tcp-host $CAR_IP --tcp-send-hz 15 --speed-max 100 --speed-min 8"
+  if [ -n "$JOYSTICK" ]; then
+    BRIDGE_CMD="$BRIDGE_CMD --joystick-direct"
+  else
+    BRIDGE_CMD="$BRIDGE_CMD --torque-scale 2.0 --deadband 15 --smooth-alpha 0.5 --feedback-alpha 0.4 --stale-sendcan-sec 0.5 --stale-sendcan-stop"
+  fi
 fi
 BRIDGE_CMD="$BRIDGE_CMD $EXTRA_BRIDGE_ARGS"
 
@@ -87,8 +92,8 @@ echo "[launcher] manager PID=$MANAGER_PID"
 # ── Step 3: Optionally start joystick ──
 if [ -n "$JOYSTICK" ]; then
   sleep 8
-  echo "[launcher] starting keyboard joystick (foreground — WASD + Q to quit)..."
-  echo "[launcher] all processes running. Press Q in joystick to stop."
+  echo "[launcher] starting keyboard joystick (foreground — WASD + ESC to quit)..."
+  echo "[launcher] all processes running. Press ESC in joystick to stop."
   python3 "$ROOT/scripts/stage-e-verify/elegoo_joystick.py" --keyboard --accel 0.8 --steer-max 1.0
 else
   echo "[launcher] all processes running. Ctrl+C to stop."

@@ -363,8 +363,13 @@ MAX_TURN_INTEGRATOR = 0.1
 
 
 def simulate_full_loop_2axis(n_frames, joystick_accel, joystick_steer,
-                              bridge_cfg, feedback_alpha=0.15):
+                              bridge_cfg, feedback_alpha=0.4):
     """Simulate both speed PID and turn PID through the bridge.
+
+    Feedback matches ELEGOO physics:
+      N=4 (both >= 0): per-wheel tracking
+      N=3 (both <= 0 or mixed): equal-magnitude feedback
+      Stop (both == 0): decay x0.999
 
     Returns (speed_l_history, speed_r_history, torque_l_history, torque_r_history).
     """
@@ -372,7 +377,7 @@ def simulate_full_loop_2axis(n_frames, joystick_accel, joystick_steer,
     i_rate = 1.0 / 100.0
 
     speed_desired = (4.0 * joystick_accel) / 5.0
-    speed_diff_desired = -(joystick_steer) / 2.0
+    speed_diff_desired = -(joystick_steer) / 1.5
 
     i_speed = 0.0
     i_turn = 0.0
@@ -427,8 +432,20 @@ def simulate_full_loop_2axis(n_frames, joystick_accel, joystick_steer,
         speed_l_hist.append(sl_s)
         speed_r_hist.append(sr_s)
 
-        est_speed_l = feedback_alpha * float(sl_s) + (1.0 - feedback_alpha) * est_speed_l
-        est_speed_r = feedback_alpha * float(sr_s) + (1.0 - feedback_alpha) * est_speed_r
+        if sl_s == 0 and sr_s == 0:
+            est_speed_l *= 0.999
+            est_speed_r *= 0.999
+        elif sl_s >= 0 and sr_s >= 0:
+            est_speed_l = feedback_alpha * float(sl_s) + (1.0 - feedback_alpha) * est_speed_l
+            est_speed_r = feedback_alpha * float(sr_s) + (1.0 - feedback_alpha) * est_speed_r
+        else:
+            avg_mag = (abs(sl_s) + abs(sr_s)) / 2.0
+            sl_sign = -1.0 if sl_s < 0 else 1.0
+            sr_sign = -1.0 if sr_s < 0 else 1.0
+            prev_avg = (abs(est_speed_l) + abs(est_speed_r)) / 2.0
+            est_mag = feedback_alpha * avg_mag + (1.0 - feedback_alpha) * prev_avg
+            est_speed_l = sl_sign * est_mag
+            est_speed_r = sr_sign * est_mag
 
     return speed_l_hist, speed_r_hist, torque_l_hist, torque_r_hist
 
@@ -445,8 +462,8 @@ def test_arc_forward_right_uses_n4_differential():
         f"Arc should have both speeds positive (N=4 differential): sl={final_sl} sr={final_sr}"
     assert final_sl != final_sr, \
         f"Arc should have different speeds: sl={final_sl} sr={final_sr}"
-    assert min(final_sl, final_sr) >= 10, \
-        f"Slower wheel speed={min(final_sl, final_sr)} should be above ~10 to produce motion"
+    assert max(final_sl, final_sr) >= 30, \
+        f"Faster wheel speed={max(final_sl, final_sr)} should produce strong motion"
 
 
 def test_arc_forward_right_faster_wheel_above_stall():
